@@ -8,6 +8,7 @@ from engine.queue import DownloadQueue
 from engine.database import get_all_downloads, delete_download
 from gui.download_row import DownloadRow
 from gui.add_dialog import AddDownloadDialog
+from gui.settings_dialog import SettingsDialog, load_settings
 
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app):
@@ -60,9 +61,11 @@ class MainWindow(Adw.ApplicationWindow):
         clear_btn.connect("clicked", self._on_clear_clicked)
         header.pack_end(clear_btn)
 
-        # Menu button
-        menu_btn = Gtk.MenuButton()
+        # Settings button
+        menu_btn = Gtk.Button()
         menu_btn.set_icon_name("open-menu-symbolic")
+        menu_btn.set_tooltip_text("Settings")
+        menu_btn.connect("clicked", self._on_settings_clicked)
         header.pack_end(menu_btn)
 
         root.append(header)
@@ -193,6 +196,19 @@ class MainWindow(Adw.ApplicationWindow):
         active = self.queue.queue_size() + len(self.queue.get_active_ids())
         self.stats_label.set_text(f"{total} download(s) — {active} active")
         self.status_label.set_text(f"Queue: {self.queue.queue_size()} waiting | {len(self.queue.get_active_ids())} downloading")
+
+    def _on_settings_clicked(self, btn):
+        dialog = SettingsDialog(self, on_save=self._on_settings_saved)
+        dialog.present()
+
+    def _on_settings_saved(self, settings):
+        from engine.downloader import ChunkDownloader
+        import engine.downloader as dl_module
+        # Apply new download dir
+        dl_module.DOWNLOAD_DIR = settings["download_dir"]
+        # Apply new concurrency
+        self.queue.set_max_concurrent(settings["max_concurrent"])
+        self.status_label.set_text(f"Settings saved — max {settings['max_concurrent']} concurrent, {settings['segments']} segments")
 
     def _on_add_clicked(self, btn):
         dialog = AddDownloadDialog(self, self._on_download_confirmed)
