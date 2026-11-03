@@ -142,10 +142,19 @@ class MainWindow(Adw.ApplicationWindow):
         root.append(status_bar)
 
     def _load_existing_downloads(self):
+        self.download_rows.clear()
         downloads = get_all_downloads()
         for dl in downloads:
             self._add_row(dl)
         self._update_stats()
+
+    def _on_api_download(self, download_id):
+        from engine.database import get_download
+        if download_id not in self.download_rows:
+            dl = get_download(download_id)
+            if dl:
+                self._add_row(dl)
+                self._update_stats()
 
     def _add_row(self, download_data):
         row = DownloadRow(

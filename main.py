@@ -14,8 +14,11 @@ class PixelDownloaderApp(Adw.Application):
     def on_activate(self, app):
         init_db()
         self.win = MainWindow(app)
-        # Pass progress callback so API video downloads update the GUI
-        start_server(self.win.queue, progress_callback=self.win._on_progress)
+        start_server(
+            self.win.queue,
+            progress_callback=self.win._on_progress,
+            new_download_callback=self.win._on_api_download
+        )
         self.win.present()
 
 def main():

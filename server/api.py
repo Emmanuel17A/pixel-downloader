@@ -7,6 +7,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 _queue_ref = None
 _progress_callback = None
+_new_download_callback = None
 
 VIDEO_DOMAINS = [
     "youtube.com", "youtu.be", "vimeo.com", "dailymotion.com",
@@ -23,10 +24,11 @@ def is_video_url(url):
     except:
         return False
 
-def set_queue(queue, progress_callback=None):
-    global _queue_ref, _progress_callback
+def set_queue(queue, progress_callback=None, new_download_callback=None):
+    global _queue_ref, _progress_callback, _new_download_callback
     _queue_ref = queue
     _progress_callback = progress_callback
+    _new_download_callback = new_download_callback
 
 @app.route("/ping", methods=["GET", "OPTIONS"])
 def ping():
@@ -46,24 +48,45 @@ def add_download():
 
     try:
         if is_video_url(url):
-            # Use yt-dlp extractor in background thread
             def run():
                 from engine.extractor import VideoExtractor
+                from gi.repository import GLib
                 ext = VideoExtractor(progress_callback=_progress_callback)
                 try:
+                    # Register in DB first so GUI row appears immediately
+                    from engine.database import add_download as db_add, update_download
+                    from engine.downloader import DOWNLOAD_DIR
+                    import os
+                    fname = "Fetching title..."
+                    save_path = os.path.join(DOWNLOAD_DIR, fname)
+                    dl_id = db_add(url, fname, save_path, 0, 1)
+                    ext.download_id = dl_id
+                    update_download(dl_id, status="downloading")
+                    if _new_download_callback:
+                        GLib.idle_add(_new_download_callback, dl_id)
                     ext.download(url)
                 except Exception as e:
                     print(f"[API Extractor] Error: {e}")
 
             threading.Thread(target=run, daemon=True).start()
-            return jsonify({
-                "status": "queued",
-                "type": "video",
-                "url": url
-            })
+            return jsonify({"status": "queued", "type": "video", "url": url})
+
         else:
-            # Regular file download
-            _queue_ref.add(url=url, filename=filename)
+            # Regular file — add to queue then notify GUI
+            downloader = _queue_ref.add(url=url, filename=filename)
+
+            def notify():
+                import time
+                from gi.repository import GLib
+                from engine.database import get_all_downloads
+                # Wait briefly for DB row to be created
+                time.sleep(0.5)
+                downloads = get_all_downloads()
+                if downloads and _new_download_callback:
+                    GLib.idle_add(_new_download_callback, downloads[0]["id"])
+
+            threading.Thread(target=notify, daemon=True).start()
+
             return jsonify({
                 "status": "queued",
                 "type": "file",
@@ -101,15 +124,10 @@ def cancel(download_id):
         _queue_ref.cancel(download_id)
     return jsonify({"status": "cancelled", "id": download_id})
 
-def start_server(queue, progress_callback=None, host="127.0.0.1", port=6969):
-    set_queue(queue, progress_callback)
+def start_server(queue, progress_callback=None, new_download_callback=None, host="127.0.0.1", port=6969):
+    set_queue(queue, progress_callback, new_download_callback)
     thread = threading.Thread(
-        target=lambda: app.run(
-            host=host,
-            port=port,
-            debug=False,
-            use_reloader=False
-        ),
+        target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
         daemon=True
     )
     thread.start()
