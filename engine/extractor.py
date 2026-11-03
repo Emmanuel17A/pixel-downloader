@@ -8,12 +8,24 @@ class VideoExtractor:
     def __init__(self, progress_callback=None):
         self.progress_callback = progress_callback
         self.download_id = None
+        self._resolved_filename = None
 
     def _progress_hook(self, d):
         if d["status"] == "downloading":
             downloaded = d.get("downloaded_bytes", 0)
             total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
             progress = (downloaded / total * 100) if total else 0
+
+            # Grab the real filename yt-dlp is writing to
+            if d.get("filename") and not self._resolved_filename:
+                self._resolved_filename = os.path.basename(d["filename"])
+                if self.download_id:
+                    update_download(
+                        self.download_id,
+                        filename=self._resolved_filename,
+                        save_path=d["filename"]
+                    )
+
             if self.download_id and self.progress_callback:
                 self.progress_callback(self.download_id, downloaded, total, progress)
 
@@ -26,7 +38,6 @@ class VideoExtractor:
                 update_download(self.download_id, status="failed")
 
     def get_info(self, url):
-        """Extract video info without downloading"""
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -44,7 +55,6 @@ class VideoExtractor:
             }
 
     def _parse_formats(self, formats):
-        """Return clean list of available quality options"""
         seen = set()
         result = []
         for f in formats:
@@ -65,9 +75,10 @@ class VideoExtractor:
         return sorted(result, key=lambda x: x["label"], reverse=True)
 
     def download(self, url, format_id=None, save_path=None, audio_only=False):
-        """Download video or audio using yt-dlp"""
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        out_path = save_path or os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
+
+        # Always let yt-dlp use the video title as filename
+        out_template = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
 
         if audio_only:
             ydl_format = "bestaudio/best"
@@ -85,7 +96,7 @@ class VideoExtractor:
 
         ydl_opts = {
             "format": ydl_format,
-            "outtmpl": out_path,
+            "outtmpl": out_template,
             "progress_hooks": [self._progress_hook],
             "postprocessors": postprocessors,
             "merge_output_format": "mp4",
@@ -93,17 +104,31 @@ class VideoExtractor:
             "no_warnings": False,
         }
 
-        # Register in DB before download starts
+        # Get info first to register proper title in DB
         info = self.get_info(url)
-        filename = f"{info['title']}.mp4" if not audio_only else f"{info['title']}.mp3"
+        title = info.get("title", "video")
+        ext = "mp3" if audio_only else "mp4"
+
+        # Sanitize filename like yt-dlp does
+        safe_title = "".join(c for c in title if c not in r'\/:*?"<>|').strip()
+        filename = f"{safe_title}.{ext}"
         final_path = os.path.join(DOWNLOAD_DIR, filename)
-        self.download_id = add_download(
-            url=url,
-            filename=filename,
-            save_path=final_path,
-            total_size=0,
-            segments=1
-        )
+
+        if not self.download_id:
+            self.download_id = add_download(
+                url=url,
+                filename=filename,
+                save_path=final_path,
+                total_size=0,
+                segments=1
+            )
+        else:
+            update_download(
+                self.download_id,
+                filename=filename,
+                save_path=final_path
+            )
+
         update_download(self.download_id, status="downloading")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -112,7 +137,6 @@ class VideoExtractor:
         return final_path
 
     def is_supported(self, url):
-        """Check if URL is supported by yt-dlp"""
         extractors = yt_dlp.extractor.gen_extractors()
         for e in extractors:
             if e.suitable(url) and e.IE_NAME != "generic":
