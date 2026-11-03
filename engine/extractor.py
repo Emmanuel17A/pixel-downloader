@@ -18,12 +18,15 @@ class VideoExtractor:
 
             # Grab the real filename yt-dlp is writing to
             if d.get("filename") and not self._resolved_filename:
-                self._resolved_filename = os.path.basename(d["filename"])
+                raw = d["filename"]
+                # strip .part suffix yt-dlp adds while downloading
+                clean = raw.replace(".part", "")
+                self._resolved_filename = os.path.basename(clean)
                 if self.download_id:
                     update_download(
                         self.download_id,
                         filename=self._resolved_filename,
-                        save_path=d["filename"]
+                        save_path=clean
                     )
 
             if self.download_id and self.progress_callback:
@@ -32,6 +35,9 @@ class VideoExtractor:
         elif d["status"] == "finished":
             if self.download_id:
                 update_download(self.download_id, status="completed")
+                # Push final progress to GUI so row updates to completed
+                if self.progress_callback:
+                    self.progress_callback(self.download_id, 0, 0, 100)
                 # Desktop notification
                 import subprocess
                 fname = self._resolved_filename or "Video"

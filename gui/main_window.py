@@ -173,7 +173,19 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _update_row_progress(self, download_id, downloaded, total, percent):
         if download_id in self.download_rows:
-            self.download_rows[download_id].update_progress(downloaded, total, percent)
+            row = self.download_rows[download_id]
+            row.update_progress(downloaded, total, percent)
+
+            # Refresh filename from DB in case yt-dlp resolved it
+            from engine.database import get_download
+            dl = get_download(download_id)
+            if dl:
+                current = row.filename_label.get_label()
+                if current in ("Fetching title...", "watch", "") and dl["filename"] not in ("Fetching title...", "watch", ""):
+                    row.update_filename(dl["filename"])
+                    row.save_path = dl["save_path"]
+                if dl["status"] != row.status:
+                    row.set_status(dl["status"])
         self._update_stats()
 
     def _update_stats(self):
