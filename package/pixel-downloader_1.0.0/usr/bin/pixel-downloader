@@ -1,0 +1,3 @@
+#!/bin/bash
+cd /usr/share/pixel-downloader
+exec python3 /usr/share/pixel-downloader/main.py "$@"

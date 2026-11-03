@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Pixel Downloader
+GenericName=Download Manager
+Comment=Fast download manager with video support by Pixel & Galaxy Lab
+Exec=pixel-downloader
+Icon=pixel-downloader
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+Keywords=download;video;youtube;idm;
+StartupNotify=true
+StartupWMClass=pixel-downloader

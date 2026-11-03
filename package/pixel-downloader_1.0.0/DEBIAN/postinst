@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+echo "Installing Pixel Downloader Python dependencies..."
+pip3 install aiohttp aiofiles yt-dlp requests flask flask-cors PyGObject \
+  --break-system-packages --quiet 2>/dev/null || true
+
+echo "Updating icon cache..."
+gtk-update-icon-cache /usr/share/icons/hicolor/ 2>/dev/null || true
+
+echo "Updating desktop database..."
+update-desktop-database /usr/share/applications/ 2>/dev/null || true
+
+echo "✅ Pixel Downloader installed successfully!"
+echo "   Launch from your app menu or run: pixel-downloader"

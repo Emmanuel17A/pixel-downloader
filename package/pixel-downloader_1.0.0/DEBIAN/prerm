@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+echo "Removing Pixel Downloader..."
+pkill -f "pixel-downloader" 2>/dev/null || true
