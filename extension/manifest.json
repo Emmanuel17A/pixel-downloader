@@ -8,11 +8,13 @@
     "activeTab",
     "scripting",
     "contextMenus",
-    "storage"
+    "storage",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>",
-    "http://127.0.0.1:6969/*"
+    "http://127.0.0.1:6969/*",
+    "http://localhost:6969/*"
   ],
   "background": {
     "service_worker": "background.js"

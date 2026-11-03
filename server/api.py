@@ -1,18 +1,21 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import threading
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 _queue_ref = None
 
 def set_queue(queue):
     global _queue_ref
     _queue_ref = queue
 
-@app.route("/ping", methods=["GET"])
+@app.route("/ping", methods=["GET", "OPTIONS"])
 def ping():
     return jsonify({"status": "ok", "app": "Pixel Downloader"})
 
-@app.route("/add", methods=["POST"])
+@app.route("/add", methods=["POST", "OPTIONS"])
 def add_download():
     global _queue_ref
     data = request.get_json()
@@ -35,7 +38,7 @@ def add_download():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/status", methods=["GET"])
+@app.route("/status", methods=["GET", "OPTIONS"])
 def status():
     global _queue_ref
     if _queue_ref is None:
@@ -45,19 +48,19 @@ def status():
         "queued": _queue_ref.queue_size()
     })
 
-@app.route("/pause/<int:download_id>", methods=["POST"])
+@app.route("/pause/<int:download_id>", methods=["POST", "OPTIONS"])
 def pause(download_id):
     if _queue_ref:
         _queue_ref.pause(download_id)
     return jsonify({"status": "paused", "id": download_id})
 
-@app.route("/resume/<int:download_id>", methods=["POST"])
+@app.route("/resume/<int:download_id>", methods=["POST", "OPTIONS"])
 def resume(download_id):
     if _queue_ref:
         _queue_ref.resume(download_id)
     return jsonify({"status": "resumed", "id": download_id})
 
-@app.route("/cancel/<int:download_id>", methods=["POST"])
+@app.route("/cancel/<int:download_id>", methods=["POST", "OPTIONS"])
 def cancel(download_id):
     if _queue_ref:
         _queue_ref.cancel(download_id)
@@ -66,7 +69,12 @@ def cancel(download_id):
 def start_server(queue, host="127.0.0.1", port=6969):
     set_queue(queue)
     thread = threading.Thread(
-        target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
+        target=lambda: app.run(
+            host=host,
+            port=port,
+            debug=False,
+            use_reloader=False
+        ),
         daemon=True
     )
     thread.start()
