@@ -183,8 +183,16 @@ class MainWindow(Adw.ApplicationWindow):
                 from engine.extractor import VideoExtractor
                 ext = VideoExtractor(progress_callback=self._on_progress)
                 try:
+                    # Register in DB first so GUI can show it immediately
+                    from engine.database import add_download, get_download
+                    import os
+                    from engine.downloader import DOWNLOAD_DIR
+                    fname = (filename or url.split("/")[-1] or "video") + (".mp3" if audio_only else ".mp4")
+                    save_path = os.path.join(DOWNLOAD_DIR, fname)
+                    dl_id = add_download(url, fname, save_path, 0, 1)
+                    ext.download_id = dl_id
+                    GLib.idle_add(self._on_video_download_started, dl_id)
                     path = ext.download(url, format_id=format_id, audio_only=audio_only)
-                    GLib.idle_add(self._on_video_download_started, ext.download_id)
                 except Exception as e:
                     print(f"[Extractor] Error: {e}")
             threading.Thread(target=run, daemon=True).start()
@@ -196,7 +204,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_video_download_started(self, download_id):
         from engine.database import get_download
         dl = get_download(download_id)
-        if dl:
+        if dl and download_id not in self.download_rows:
             self._add_row(dl)
             self._update_stats()
 
