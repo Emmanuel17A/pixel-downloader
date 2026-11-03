@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pixel Downloader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #89b4fa, #cba6f7);
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1e1e2e;
+    }
+
+    .header p {
+      font-size: 11px;
+      color: #1e1e2e;
+      opacity: 0.8;
+    }
+
+    .logo {
+      width: 36px;
+      height: 36px;
+      background: #1e1e2e;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .status-bar {
+      padding: 8px 16px;
+      background: #181825;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6c7086;
+    }
+    .dot.online { background: #a6e3a1; }
+    .dot.offline { background: #f38ba8; }
+
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #313244;
+    }
+
+    .section label {
+      font-size: 11px;
+      color: #6c7086;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 6px;
+      color: #cdd6f4;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"]:focus, input[type="url"]:focus {
+      border-color: #89b4fa;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #89b4fa, #cba6f7);
+      color: #1e1e2e;
+    }
+
+    .btn-secondary {
+      background: #313244;
+      color: #cdd6f4;
+      margin-top: 6px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .stat-card {
+      flex: 1;
+      background: #313244;
+      border-radius: 6px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .stat-card .num {
+      font-size: 20px;
+      font-weight: 700;
+      color: #89b4fa;
+    }
+
+    .stat-card .lbl {
+      font-size: 10px;
+      color: #6c7086;
+      margin-top: 2px;
+    }
+
+    .toast {
+      margin: 10px 16px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      display: none;
+    }
+
+    .toast.success { background: #a6e3a1; color: #1e1e2e; display: block; }
+    .toast.error   { background: #f38ba8; color: #1e1e2e; display: block; }
+
+    .footer {
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #45475a;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">⬇</div>
+    <div>
+      <h1>Pixel Downloader</h1>
+      <p>by Pixel & Galaxy Lab</p>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">Checking connection...</span>
+  </div>
+
+  <div class="section">
+    <label>Paste URL to Download</label>
+    <input type="url" id="url-input" placeholder="https://example.com/file.mp4" />
+    <input type="text" id="filename-input" placeholder="Filename (optional)" />
+    <button class="btn btn-primary" id="download-btn" disabled>
+      ⬇ Send to Pixel Downloader
+    </button>
+    <button class="btn btn-secondary" id="tab-btn">
+      Download Current Tab URL
+    </button>
+  </div>
+
+  <div class="section">
+    <label>Active Downloads</label>
+    <div class="stats">
+      <div class="stat-card">
+        <div class="num" id="active-count">–</div>
+        <div class="lbl">Downloading</div>
+      </div>
+      <div class="stat-card">
+        <div class="num" id="queued-count">–</div>
+        <div class="lbl">Queued</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div class="footer">Pixel Downloader v1.0 • Pixel & Galaxy Lab</div>
+
+  <script>
+    const API = "http://127.0.0.1:6969";
+
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("status-text");
+    const downloadBtn = document.getElementById("download-btn");
+    const urlInput = document.getElementById("url-input");
+    const filenameInput = document.getElementById("filename-input");
+    const toast = document.getElementById("toast");
+    const activeCount = document.getElementById("active-count");
+    const queuedCount = document.getElementById("queued-count");
+
+    function showToast(msg, type) {
+      toast.textContent = msg;
+      toast.className = `toast ${type}`;
+      setTimeout(() => { toast.className = "toast"; }, 3000);
+    }
+
+    async function checkConnection() {
+      try {
+        const r = await fetch(`${API}/ping`);
+        const d = await r.json();
+        dot.className = "dot online";
+        statusText.textContent = "Connected to Pixel Downloader";
+        downloadBtn.disabled = false;
+        loadStats();
+      } catch {
+        dot.className = "dot offline";
+        statusText.textContent = "App not running — open Pixel Downloader";
+        downloadBtn.disabled = true;
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const r = await fetch(`${API}/status`);
+        const d = await r.json();
+        activeCount.textContent = d.active?.length ?? 0;
+        queuedCount.textContent = d.queued ?? 0;
+      } catch {}
+    }
+
+    downloadBtn.addEventListener("click", async () => {
+      const url = urlInput.value.trim();
+      const filename = filenameInput.value.trim() || url.split("/").pop().split("?")[0];
+      if (!url) { showToast("Please enter a URL", "error"); return; }
+
+      try {
+        const r = await fetch(`${API}/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, filename })
+        });
+        const d = await r.json();
+        showToast(`✓ Queued: ${filename}`, "success");
+        urlInput.value = "";
+        filenameInput.value = "";
+        loadStats();
+      } catch {
+        showToast("Failed to connect to app", "error");
+      }
+    });
+
+    document.getElementById("tab-btn").addEventListener("click", () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) urlInput.value = tabs[0].url;
+      });
+    });
+
+    checkConnection();
+    setInterval(loadStats, 3000);
+  </script>
+</body>
+</html>
