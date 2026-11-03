@@ -12,15 +12,10 @@ class PixelDownloaderApp(Adw.Application):
         self.connect("activate", self.on_activate)
 
     def on_activate(self, app):
-        # Init database
         init_db()
-
-        # Create main window
         self.win = MainWindow(app)
-
-        # Start local API server for browser extension
-        start_server(self.win.queue)
-
+        # Pass progress callback so API video downloads update the GUI
+        start_server(self.win.queue, progress_callback=self.win._on_progress)
         self.win.present()
 
 def main():
