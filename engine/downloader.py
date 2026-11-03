@@ -98,6 +98,14 @@ class ChunkDownloader:
             if not self.cancelled:
                 await self.merge_chunks(temp_dir)
                 update_download(self.download_id, status="completed", downloaded=self.downloaded)
+                import subprocess
+                subprocess.Popen([
+                    "notify-send",
+                    "Pixel Downloader",
+                    f"✅ Download complete: {self.filename}",
+                    "--icon=folder-download",
+                    "--urgency=normal"
+                ])
             else:
                 update_download(self.download_id, status="cancelled")
 

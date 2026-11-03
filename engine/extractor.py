@@ -32,6 +32,16 @@ class VideoExtractor:
         elif d["status"] == "finished":
             if self.download_id:
                 update_download(self.download_id, status="completed")
+                # Desktop notification
+                import subprocess
+                fname = self._resolved_filename or "Video"
+                subprocess.Popen([
+                    "notify-send",
+                    "Pixel Downloader",
+                    f"✅ Download complete: {fname}",
+                    "--icon=folder-download",
+                    "--urgency=normal"
+                ])
 
         elif d["status"] == "error":
             if self.download_id:

@@ -29,7 +29,9 @@ class DownloadRow(Gtk.ListBoxRow):
         self._speed = 0
 
         self.add_css_class("activatable")
+        self.save_path = download_data.get("save_path", "")
         self._build_ui(download_data)
+        self._setup_right_click()
 
     def _build_ui(self, data):
         # Outer box with padding
@@ -217,3 +219,70 @@ class DownloadRow(Gtk.ListBoxRow):
             self.percent_label.set_label("100%")
             self.speed_label.set_label("")
             self.size_label.set_label("Completed")
+
+    def update_filename(self, filename):
+        self.filename_label.set_label(filename)
+
+    def _setup_right_click(self):
+        gesture = Gtk.GestureClick()
+        gesture.set_button(3)  # Right click
+        gesture.connect("pressed", self._on_right_click)
+        self.add_controller(gesture)
+
+    def _on_right_click(self, gesture, n_press, x, y):
+        menu = Gtk.Popover()
+        menu.set_parent(self)
+        menu.set_has_arrow(False)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+
+        open_btn = Gtk.Button(label="  Open File")
+        open_btn.set_icon_name("document-open-symbolic")
+        open_btn.add_css_class("flat")
+        open_btn.connect("clicked", lambda _: self._open_file(menu))
+
+        folder_btn = Gtk.Button(label="  Open Folder")
+        folder_btn.set_icon_name("folder-open-symbolic")
+        folder_btn.add_css_class("flat")
+        folder_btn.connect("clicked", lambda _: self._open_folder(menu))
+
+        copy_btn = Gtk.Button(label="  Copy URL")
+        copy_btn.set_icon_name("edit-copy-symbolic")
+        copy_btn.add_css_class("flat")
+        copy_btn.connect("clicked", lambda _: self._copy_url(menu))
+
+        box.append(open_btn)
+        box.append(folder_btn)
+        box.append(copy_btn)
+
+        menu.set_child(box)
+
+        rect = self.get_allocation()
+        from gi.repository import Gdk
+        r = Gdk.Rectangle()
+        r.x, r.y, r.width, r.height = int(x), int(y), 1, 1
+        menu.set_pointing_to(r)
+        menu.popup()
+
+    def _open_file(self, menu):
+        menu.popdown()
+        import subprocess, os
+        if self.save_path and os.path.exists(self.save_path):
+            subprocess.Popen(["xdg-open", self.save_path])
+
+    def _open_folder(self, menu):
+        menu.popdown()
+        import subprocess, os
+        folder = os.path.dirname(self.save_path)
+        if folder and os.path.exists(folder):
+            subprocess.Popen(["xdg-open", folder])
+
+    def _copy_url(self, menu):
+        menu.popdown()
+        from gi.repository import Gdk, GLib
+        clipboard = self.get_clipboard()
+        clipboard.set(self.url_label.get_text())
