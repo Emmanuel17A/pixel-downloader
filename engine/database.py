@@ -23,6 +23,23 @@ def init_db():
         )
     ''')
     conn.commit()
+
+    # Fix any downloads that were interrupted mid-session
+    c.execute('''
+        UPDATE downloads
+        SET status = 'failed'
+        WHERE status IN ('downloading', 'queued')
+    ''')
+
+    # Fix stuck "Fetching title..." entries
+    c.execute('''
+        UPDATE downloads
+        SET status = 'failed', filename = 'Download failed — retry'
+        WHERE filename IN ('Fetching title...', 'watch', '')
+        AND status != 'completed'
+    ''')
+
+    conn.commit()
     conn.close()
 
 def add_download(url, filename, save_path, total_size=0, segments=8):

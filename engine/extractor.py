@@ -16,11 +16,10 @@ class VideoExtractor:
             total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
             progress = (downloaded / total * 100) if total else 0
 
-            # Grab the real filename yt-dlp is writing to
+            # Grab real filename as soon as yt-dlp starts writing
             if d.get("filename") and not self._resolved_filename:
                 raw = d["filename"]
-                # strip .part suffix yt-dlp adds while downloading
-                clean = raw.replace(".part", "")
+                clean = raw.replace(".part", "").replace(".ytdl", "")
                 self._resolved_filename = os.path.basename(clean)
                 if self.download_id:
                     update_download(
@@ -35,16 +34,14 @@ class VideoExtractor:
         elif d["status"] == "finished":
             if self.download_id:
                 update_download(self.download_id, status="completed")
-                # Push final progress to GUI so row updates to completed
                 if self.progress_callback:
                     self.progress_callback(self.download_id, 0, 0, 100)
-                # Desktop notification
                 import subprocess
                 fname = self._resolved_filename or "Video"
                 subprocess.Popen([
                     "notify-send",
                     "Pixel Downloader",
-                    f"✅ Download complete: {fname}",
+                    f"Download complete: {fname}",
                     "--icon=folder-download",
                     "--urgency=normal"
                 ])
@@ -52,12 +49,15 @@ class VideoExtractor:
         elif d["status"] == "error":
             if self.download_id:
                 update_download(self.download_id, status="failed")
+                if self.progress_callback:
+                    self.progress_callback(self.download_id, 0, 0, 0)
 
     def get_info(self, url):
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "socket_timeout": 15,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -92,8 +92,6 @@ class VideoExtractor:
 
     def download(self, url, format_id=None, save_path=None, audio_only=False):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-        # Always let yt-dlp use the video title as filename
         out_template = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
 
         if audio_only:
@@ -118,18 +116,30 @@ class VideoExtractor:
             "merge_output_format": "mp4",
             "quiet": False,
             "no_warnings": False,
+            "socket_timeout": 30,
+            "retries": 5,
+            "fragment_retries": 5,
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
         }
 
-        # Get info first to register proper title in DB
-        info = self.get_info(url)
-        title = info.get("title", "video")
-        ext = "mp3" if audio_only else "mp4"
+        # Get info first to set a real filename immediately
+        try:
+            info = self.get_info(url)
+            title = info.get("title", "video")
+            ext = "mp3" if audio_only else "mp4"
+            safe_title = "".join(
+                c for c in title if c not in r'\/:*?"<>|'
+            ).strip()
+            filename = f"{safe_title}.{ext}"
+            final_path = os.path.join(DOWNLOAD_DIR, filename)
+        except Exception as e:
+            print(f"[Extractor] Could not fetch info: {e}")
+            filename = "video.mp4"
+            final_path = os.path.join(DOWNLOAD_DIR, filename)
 
-        # Sanitize filename like yt-dlp does
-        safe_title = "".join(c for c in title if c not in r'\/:*?"<>|').strip()
-        filename = f"{safe_title}.{ext}"
-        final_path = os.path.join(DOWNLOAD_DIR, filename)
-
+        # Update DB with real filename right away
         if not self.download_id:
             self.download_id = add_download(
                 url=url,
@@ -147,8 +157,20 @@ class VideoExtractor:
 
         update_download(self.download_id, status="downloading")
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        # Push filename to GUI immediately via progress callback
+        if self.progress_callback:
+            self.progress_callback(self.download_id, 0, 0, 0)
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            print(f"[Extractor] Download error: {e}")
+            update_download(self.download_id, status="failed",
+                          filename=f"Failed: {filename}")
+            if self.progress_callback:
+                self.progress_callback(self.download_id, 0, 0, 0)
+            raise
 
         return final_path
 

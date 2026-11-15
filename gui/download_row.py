@@ -145,6 +145,31 @@ class DownloadRow(Gtk.ListBoxRow):
 
         # Set initial button visibility
         self._update_buttons()
+        # Restore correct progress state from DB data
+        self._restore_state(data)
+
+    def _restore_state(self, data):
+        status = data.get("status", "queued")
+        downloaded = data.get("downloaded", 0)
+        total = data.get("total_size", 0)
+
+        if status == "completed":
+            self.progress_bar.set_fraction(1.0)
+            self.percent_label.set_label("100%")
+            self.speed_label.set_label("")
+            self.size_label.set_label(
+                f"Done — {format_size(downloaded)}" if downloaded > 0 else "Completed"
+            )
+        elif status == "downloading":
+            # App was killed mid-download — mark as failed
+            self.status = "failed"
+            self._apply_badge_style("failed")
+            self.size_label.set_label("Interrupted — restart to retry")
+        elif status in ("queued", "paused"):
+            if total > 0:
+                self.size_label.set_label(f"0 B of {format_size(total)}")
+            else:
+                self.size_label.set_label("Waiting...")
 
     def _get_icon(self, filename):
         ext = os.path.splitext(filename)[-1].lower()
