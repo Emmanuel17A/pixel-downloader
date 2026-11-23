@@ -24,20 +24,44 @@ def init_db():
     ''')
     conn.commit()
 
-    # Fix any downloads that were interrupted mid-session
+    # Smart restart recovery — check disk to decide real status
     c.execute('''
-        UPDATE downloads
-        SET status = 'failed'
-        WHERE status IN ('downloading', 'queued')
+        SELECT id, filename, save_path, status FROM downloads
+        WHERE status IN ('downloading', 'queued', 'failed')
     ''')
+    rows = c.fetchall()
 
-    # Fix stuck "Fetching title..." entries
-    c.execute('''
-        UPDATE downloads
-        SET status = 'failed', filename = 'Download failed — retry'
-        WHERE filename IN ('Fetching title...', 'watch', '')
-        AND status != 'completed'
-    ''')
+    for row_id, filename, save_path, status in rows:
+        # Skip genuinely bad placeholder entries
+        if filename in ('Fetching title...', 'watch', '', 'Download failed — retry'):
+            c.execute("DELETE FROM downloads WHERE id = ?", (row_id,))
+            continue
+
+        # Check if file actually exists on disk
+        if save_path and os.path.exists(save_path):
+            file_size = os.path.getsize(save_path)
+            if file_size > 0:
+                # File is there and has content — mark as completed
+                c.execute('''
+                    UPDATE downloads
+                    SET status = 'completed', downloaded = ?
+                    WHERE id = ?
+                ''', (file_size, row_id))
+            else:
+                # Empty file — mark failed
+                c.execute(
+                    "UPDATE downloads SET status = 'failed' WHERE id = ?",
+                    (row_id,)
+                )
+        else:
+            # No file on disk at all
+            if status == 'downloading':
+                # Was mid-download when killed — mark interrupted
+                c.execute(
+                    "UPDATE downloads SET status = 'failed' WHERE id = ?",
+                    (row_id,)
+                )
+            # queued ones stay queued — they never started
 
     conn.commit()
     conn.close()

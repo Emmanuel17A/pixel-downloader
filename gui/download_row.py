@@ -152,24 +152,31 @@ class DownloadRow(Gtk.ListBoxRow):
         status = data.get("status", "queued")
         downloaded = data.get("downloaded", 0)
         total = data.get("total_size", 0)
+        save_path = data.get("save_path", "")
 
         if status == "completed":
             self.progress_bar.set_fraction(1.0)
             self.percent_label.set_label("100%")
             self.speed_label.set_label("")
+            # Get real file size from disk if available
+            real_size = downloaded
+            if save_path and os.path.exists(save_path):
+                real_size = os.path.getsize(save_path)
             self.size_label.set_label(
-                f"Done — {format_size(downloaded)}" if downloaded > 0 else "Completed"
+                f"Done — {format_size(real_size)}" if real_size > 0 else "Completed"
             )
-        elif status == "downloading":
-            # App was killed mid-download — mark as failed
-            self.status = "failed"
-            self._apply_badge_style("failed")
-            self.size_label.set_label("Interrupted — restart to retry")
-        elif status in ("queued", "paused"):
+        elif status == "failed":
+            self.progress_bar.set_fraction(0.0)
+            self.percent_label.set_label("0%")
+            self.speed_label.set_label("")
+            self.size_label.set_label("Failed — delete and retry")
+        elif status == "queued":
+            self.size_label.set_label("Waiting to start...")
+        elif status == "paused":
             if total > 0:
-                self.size_label.set_label(f"0 B of {format_size(total)}")
+                self.size_label.set_label(f"Paused — {format_size(total)} total")
             else:
-                self.size_label.set_label("Waiting...")
+                self.size_label.set_label("Paused")
 
     def _get_icon(self, filename):
         ext = os.path.splitext(filename)[-1].lower()
@@ -212,6 +219,10 @@ class DownloadRow(Gtk.ListBoxRow):
         self.resume_btn.set_visible(is_paused)
         self.cancel_btn.set_visible(is_active or is_paused)
         self.delete_btn.set_visible(is_done or self.status == "queued")
+
+        # Show delete with tooltip hint for failed
+        if self.status == "failed":
+            self.delete_btn.set_tooltip_text("Delete and retry manually")
 
     def update_progress(self, downloaded, total, percent):
         now = GLib.get_monotonic_time()
