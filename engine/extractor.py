@@ -20,7 +20,11 @@ class VideoExtractor:
             if d.get("filename") and not self._resolved_filename:
                 raw = d["filename"]
                 clean = raw.replace(".part", "").replace(".ytdl", "")
-                self._resolved_filename = os.path.basename(clean)
+                basename = os.path.basename(clean)
+                # Strip yt-dlp format suffixes like .f616.mp4 → .mp4
+                import re
+                basename = re.sub(r'\.f\d{3,4}(\.\w+)$', r'\1', basename)
+                self._resolved_filename = basename
                 if self.download_id:
                     update_download(
                         self.download_id,
@@ -110,7 +114,10 @@ class VideoExtractor:
 
         ydl_opts = {
             "format": ydl_format,
-            "outtmpl": out_template,
+            "outtmpl": {
+                "default": out_template,
+                "chapter": out_template,
+            },
             "progress_hooks": [self._progress_hook],
             "postprocessors": postprocessors,
             "merge_output_format": "mp4",
@@ -119,6 +126,9 @@ class VideoExtractor:
             "socket_timeout": 30,
             "retries": 5,
             "fragment_retries": 5,
+            # Prevent format ID from appearing in filename
+            "restrictfilenames": False,
+            "trim_filenames": 200,
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
@@ -131,12 +141,22 @@ class VideoExtractor:
             ext = "mp3" if audio_only else "mp4"
             safe_title = "".join(
                 c for c in title if c not in r'\/:*?"<>|'
-            ).strip()
+            ).strip() or "video"
             filename = f"{safe_title}.{ext}"
             final_path = os.path.join(DOWNLOAD_DIR, filename)
+            print(f"[Extractor] Resolved title: {filename}")
         except Exception as e:
             print(f"[Extractor] Could not fetch info: {e}")
-            filename = "video.mp4"
+            # Try to get title from URL as fallback
+            try:
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(url)
+                qs = parse_qs(parsed.query)
+                # YouTube video id as last resort
+                vid = qs.get("v", ["video"])[0]
+                filename = f"{vid}.mp4"
+            except:
+                filename = "video.mp4"
             final_path = os.path.join(DOWNLOAD_DIR, filename)
 
         # Update DB with real filename right away
