@@ -1,0 +1,10 @@
+aiohttp
+aiofiles
+yt-dlp
+requests
+flask
+flask-cors
+customtkinter
+win10toast
+pillow
+pyinstaller

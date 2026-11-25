@@ -40,15 +40,26 @@ class VideoExtractor:
                 update_download(self.download_id, status="completed")
                 if self.progress_callback:
                     self.progress_callback(self.download_id, 0, 0, 100)
-                import subprocess
                 fname = self._resolved_filename or "Video"
-                subprocess.Popen([
-                    "notify-send",
-                    "Pixel Downloader",
-                    f"Download complete: {fname}",
-                    "--icon=folder-download",
-                    "--urgency=normal"
-                ])
+                import sys
+                if sys.platform == "win32":
+                    try:
+                        from win10toast import ToastNotifier
+                        ToastNotifier().show_toast(
+                            "Pixel Downloader",
+                            f"Download complete: {fname}",
+                            duration=5,
+                            threaded=True
+                        )
+                    except:
+                        pass
+                else:
+                    import subprocess
+                    subprocess.Popen([
+                        "notify-send", "Pixel Downloader",
+                        f"Download complete: {fname}",
+                        "--icon=folder-download", "--urgency=normal"
+                    ])
 
         elif d["status"] == "error":
             if self.download_id:
