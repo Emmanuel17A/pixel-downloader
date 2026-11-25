@@ -14,7 +14,7 @@ function isVideoSite(url) {
 }
 
 function getFilename(url) {
-  if (isVideoSite(url)) return null; // let yt-dlp name it
+  if (isVideoSite(url)) return null;
   try {
     const path = new URL(url).pathname;
     const name = path.split("/").pop().split("?")[0];
@@ -22,38 +22,26 @@ function getFilename(url) {
   } catch { return "download"; }
 }
 
-// Intercept browser downloads
-chrome.downloads.onCreated.addListener(async (downloadItem) => {
-  const url = downloadItem.url;
-  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("chrome")) return;
+async function sendToPixel(url, filename) {
+  const body = { url };
+  if (filename) body.filename = filename;
+  try {
+    const response = await fetch(`${API_URL}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return await response.json();
+  } catch (e) {
+    console.error("[Pixel Downloader] Failed:", e);
+  }
+}
 
-  chrome.downloads.cancel(downloadItem.id, async () => {
-    try {
-      const filename = getFilename(url);
-      const body = { url };
-      if (filename) body.filename = filename;
-
-      const response = await fetch(`${API_URL}/add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      const data = await response.json();
-      console.log("[Pixel Downloader] Queued:", data);
-
-      chrome.notifications?.create({
-        type: "basic",
-        iconUrl: "icons/icon48.png",
-        title: "Pixel Downloader",
-        message: `Download queued: ${filename || url}`
-      });
-
-    } catch (e) {
-      console.error("[Pixel Downloader] Failed:", e);
-    }
-  });
-});
+// ── REMOVED auto-intercept ──────────────────────────────────────
+// We no longer intercept chrome.downloads.onCreated automatically
+// User must explicitly use right-click or popup to send to Pixel
+// This lets normal browser downloads work as usual
+// ───────────────────────────────────────────────────────────────
 
 // Context menus
 chrome.runtime.onInstalled.addListener(() => {
@@ -82,18 +70,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!url) return;
 
   const filename = getFilename(url);
-  const body = { url };
-  if (filename) body.filename = filename;
+  await sendToPixel(url, filename);
 
-  try {
-    await fetch(`${API_URL}/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-  } catch (e) {
-    console.error("[Pixel Downloader] Context menu error:", e);
-  }
+  chrome.notifications?.create({
+    type: "basic",
+    iconUrl: "icons/icon48.png",
+    title: "Pixel Downloader",
+    message: `Queued: ${filename || url}`
+  });
 });
 
 // Popup messages
@@ -106,14 +90,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === "add") {
-    const body = { url: msg.url };
-    if (msg.filename) body.filename = msg.filename;
-    fetch(`${API_URL}/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    })
-      .then(r => r.json())
+    sendToPixel(msg.url, msg.filename)
       .then(data => sendResponse({ ok: true, data }))
       .catch(e => sendResponse({ ok: false, error: e.message }));
     return true;
