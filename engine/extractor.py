@@ -44,12 +44,12 @@ class VideoExtractor:
                 import sys
                 if sys.platform == "win32":
                     try:
-                        from win10toast import ToastNotifier
-                        ToastNotifier().show_toast(
-                            "Pixel Downloader",
-                            f"Download complete: {fname}",
-                            duration=5,
-                            threaded=True
+                        from plyer import notification
+                        notification.notify(
+                            title="Pixel Downloader",
+                            message=f"Download complete: {fname}",
+                            app_name="Pixel Downloader",
+                            timeout=5
                         )
                     except:
                         pass
