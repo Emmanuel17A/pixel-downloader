@@ -5,6 +5,6 @@ requests
 flask
 flask-cors
 customtkinter
-win10toast
+plyer
 pillow
 pyinstaller
