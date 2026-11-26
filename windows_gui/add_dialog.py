@@ -8,7 +8,7 @@ class AddDownloadDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_confirm):
         super().__init__(parent)
         self.title("Add Download")
-        self.geometry("500x480")
+        self.geometry("520x580")
         self.resizable(False, False)
         self.on_confirm = on_confirm
         self.video_info = None

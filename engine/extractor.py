@@ -67,31 +67,55 @@ class VideoExtractor:
                 if self.progress_callback:
                     self.progress_callback(self.download_id, 0, 0, 0)
 
+    @staticmethod
+    def _get_ytdlp_path():
+        """Find yt-dlp executable — works both frozen and normal"""
+        import sys, os, shutil
+        if getattr(sys, "frozen", False):
+            # Look next to the exe first
+            base = sys._MEIPASS if hasattr(sys, "_MEIPASS") else os.path.dirname(sys.executable)
+            candidates = [
+                os.path.join(os.path.dirname(sys.executable), "yt-dlp.exe"),
+                os.path.join(base, "yt-dlp.exe"),
+                os.path.join(os.path.dirname(sys.executable), "yt-dlp"),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    return c
+        # Fall back to system PATH
+        found = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+        return found or "yt-dlp"
+
     def get_info(self, url):
         import sys, json, subprocess
 
-        # When frozen as exe use yt-dlp subprocess to avoid hanging
-        if getattr(sys, "frozen", False):
-            try:
-                result = subprocess.run(
-                    ["yt-dlp", "--dump-json", "--no-playlist", url],
-                    capture_output=True, text=True, timeout=30
-                )
-                if result.returncode == 0:
-                    info = json.loads(result.stdout)
-                    return {
-                        "title": info.get("title", "Unknown"),
-                        "duration": info.get("duration", 0),
-                        "thumbnail": info.get("thumbnail", ""),
-                        "uploader": info.get("uploader", "Unknown"),
-                        "formats": self._parse_formats(info.get("formats", [])),
-                        "url": url,
-                    }
-            except Exception as e:
-                print(f"[Extractor] subprocess get_info failed: {e}")
-                raise
+        ytdlp = self._get_ytdlp_path()
+        print(f"[Extractor] Using yt-dlp: {ytdlp}")
 
-        # Normal mode — import directly
+        try:
+            result = subprocess.run(
+                [ytdlp, "--dump-json", "--no-playlist",
+                 "--no-warnings", url],
+                capture_output=True, text=True, timeout=60,
+                creationflags=0x08000000 if sys.platform == "win32" else 0
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                info = json.loads(result.stdout.strip().split("
+")[0])
+                return {
+                    "title": info.get("title", "Unknown"),
+                    "duration": info.get("duration", 0),
+                    "thumbnail": info.get("thumbnail", ""),
+                    "uploader": info.get("uploader", "Unknown"),
+                    "formats": self._parse_formats(info.get("formats", [])),
+                    "url": url,
+                }
+            else:
+                print(f"[Extractor] yt-dlp stderr: {result.stderr}")
+        except Exception as e:
+            print(f"[Extractor] subprocess get_info failed: {e}")
+
+        # Fallback — use yt_dlp library directly
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -216,9 +240,76 @@ class VideoExtractor:
         if self.progress_callback:
             self.progress_callback(self.download_id, 0, 0, 0)
 
+        import sys
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            # On Windows frozen exe — use yt-dlp subprocess
+            if sys.platform == "win32":
+                ytdlp = self._get_ytdlp_path()
+                cmd = [
+                    ytdlp,
+                    "--format", ydl_format,
+                    "--output", out_template,
+                    "--merge-output-format", "mp4",
+                    "--no-playlist",
+                    "--newline",
+                ]
+                if audio_only:
+                    cmd += ["--extract-audio", "--audio-format", "mp3",
+                            "--audio-quality", "192K"]
+                cmd.append(url)
+
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    creationflags=0x08000000
+                )
+
+                import re
+                for line in process.stdout:
+                    line = line.strip()
+                    print(f"[yt-dlp] {line}")
+
+                    # Parse progress from yt-dlp output
+                    # e.g. [download]  45.6% of 123.45MiB at 1.23MiB/s
+                    match = re.search(
+                        r"\[download\]\s+([\d.]+)%\s+of\s+([\d.]+)(\w+)",
+                        line
+                    )
+                    if match and self.download_id and self.progress_callback:
+                        percent = float(match.group(1))
+                        size_val = float(match.group(2))
+                        size_unit = match.group(3)
+                        unit_map = {"B": 1, "KiB": 1024, "MiB": 1024**2,
+                                    "GiB": 1024**3}
+                        total = int(size_val * unit_map.get(size_unit, 1))
+                        downloaded = int(total * percent / 100)
+                        self.progress_callback(
+                            self.download_id, downloaded, total, percent
+                        )
+
+                    # Grab filename
+                    fname_match = re.search(
+                        r"\[(?:download|Merger)\] Destination: (.+)", line
+                    )
+                    if fname_match and not self._resolved_filename:
+                        raw = fname_match.group(1).strip()
+                        self._resolved_filename = os.path.basename(raw)
+                        if self.download_id:
+                            update_download(
+                                self.download_id,
+                                filename=self._resolved_filename,
+                                save_path=raw
+                            )
+
+                process.wait()
+                if process.returncode != 0:
+                    raise Exception(f"yt-dlp exited with code {process.returncode}")
+            else:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
         except Exception as e:
             print(f"[Extractor] Download error: {e}")
             update_download(self.download_id, status="failed",
@@ -226,6 +317,11 @@ class VideoExtractor:
             if self.progress_callback:
                 self.progress_callback(self.download_id, 0, 0, 0)
             raise
+
+        # Mark completed
+        update_download(self.download_id, status="completed")
+        if self.progress_callback:
+            self.progress_callback(self.download_id, 0, 0, 100)
 
         return final_path
 
