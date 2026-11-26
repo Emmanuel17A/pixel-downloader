@@ -68,6 +68,30 @@ class VideoExtractor:
                     self.progress_callback(self.download_id, 0, 0, 0)
 
     def get_info(self, url):
+        import sys, json, subprocess
+
+        # When frozen as exe use yt-dlp subprocess to avoid hanging
+        if getattr(sys, "frozen", False):
+            try:
+                result = subprocess.run(
+                    ["yt-dlp", "--dump-json", "--no-playlist", url],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode == 0:
+                    info = json.loads(result.stdout)
+                    return {
+                        "title": info.get("title", "Unknown"),
+                        "duration": info.get("duration", 0),
+                        "thumbnail": info.get("thumbnail", ""),
+                        "uploader": info.get("uploader", "Unknown"),
+                        "formats": self._parse_formats(info.get("formats", [])),
+                        "url": url,
+                    }
+            except Exception as e:
+                print(f"[Extractor] subprocess get_info failed: {e}")
+                raise
+
+        # Normal mode — import directly
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
